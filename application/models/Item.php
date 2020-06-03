@@ -59,7 +59,7 @@ class Item extends CI_Model
 	*/
 	public function item_number_exists($item_number, $item_id = '')
 	{
-		if($this->config->item('allow_duplicate_barcodes') != FALSE)
+		if($this->config->item('allow_duplicate_barcodes') == TRUE)
 		{
 			return FALSE;
 		}

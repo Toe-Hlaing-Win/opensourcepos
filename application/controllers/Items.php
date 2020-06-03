@@ -821,9 +821,23 @@ class Items extends Secure_Controller
 		{
 			if(file_exists($_FILES['file_path']['tmp_name']))
 			{
-				$line_array	= get_csv_file($_FILES['file_path']['tmp_name']);
-				$failCodes	= array();
-				$keys		= $line_array[0];
+				$line_array					= get_csv_file($_FILES['file_path']['tmp_name']);
+				$failCodes					= array();
+				$keys						= $line_array[0];
+				$employee_id				= $this->Employee->get_logged_in_employee_info()->person_id;
+				$allowed_stock_locations	= $this->Stock_location->get_allowed_locations();
+				$attribute_definition_names	= $this->Attribute->get_definition_names();
+				unset($definition_names[-1]);
+
+				foreach($attribute_definition_names as $definition_name)
+				{
+					$attribute_data[$definition_name] = $this->Attribute->get_definition_by_name($definition_name)[0];
+
+					if($attribute_data[$definition_name]['definition_type'] === DROPDOWN)
+					{
+						$attribute_data[$definition_name]['dropdown_values'] = $this->Attribute->get_definition_values($attribute_data[$definition_name]['definition_id']);
+					}
+				}
 
 				$this->db->trans_begin();
 				for($i = 1; $i < count($line_array); $i++)
@@ -867,7 +881,7 @@ class Items extends Secure_Controller
 				//Sanity check of data
 					if(!$invalidated)
 					{
-						$invalidated = $this->data_error_check($line, $item_data);
+						$invalidated = $this->data_error_check($line, $item_data, $allowed_stock_locations, $attribute_definition_names, $attribute_data);
 					}
 
 				//Save to database
@@ -876,8 +890,8 @@ class Items extends Secure_Controller
 					if(!$invalidated && $this->Item->save($item_data, $item_id))
 					{
 						$this->save_tax_data($line, $item_data);
-						$this->save_inventory_quantities($line, $item_data);
-						$invalidated = $this->save_attribute_data($line, $item_data);
+						$this->save_inventory_quantities($line, $item_data, $allowed_stock_locations, $employee_id);
+						$invalidated = $this->save_attribute_data($line, $item_data, $attribute_definition_names);
 					}
 					else
 					{
@@ -914,7 +928,7 @@ class Items extends Secure_Controller
 	 *
 	 * @return	bool	Returns FALSE if all data checks out and TRUE when there is an error in the data
 	 */
-	private function data_error_check($line, $item_data)
+	private function data_error_check($line, $item_data, $allowed_locations, $definition_names, $attribute_data)
 	{
 		$is_update = $item_data['item_id'] ? TRUE : FALSE;
 
@@ -949,9 +963,6 @@ class Items extends Secure_Controller
 			$line['Tax 2 Percent']
 		);
 
-	//Add in Stock Location values to check for numeric
-		$allowed_locations	= $this->Stock_location->get_allowed_locations();
-
 		foreach($allowed_locations as $location_id => $location_name)
 		{
 			$check_for_numeric_values[] = $line['location_'. $location_name];
@@ -968,20 +979,16 @@ class Items extends Secure_Controller
 		}
 
 	//Check Attribute Data
-		$definition_names = $this->Attribute->get_definition_names();
-		unset($definition_names[-1]);
-
 		foreach($definition_names as $definition_name)
 		{
 			if(!empty($line['attribute_' . $definition_name]))
 			{
-				$attribute_data 	= $this->Attribute->get_definition_by_name($definition_name)[0];
-				$definition_type	= $attribute_data['definition_type'];
+				$definition_type	= $attribute_data[$definition_name]['definition_type'];
 				$attribute_value 	= $line['attribute_' . $definition_name];
 
-				if($definition_type == 'DROPDOWN')
+				if($definition_type === DROPDOWN)
 				{
-					$dropdown_values 	= $this->Attribute->get_definition_values($attribute_data['definition_id']);
+					$dropdown_values 	= $attribute_data[$definition_name]['dropdown_values'];
 					$dropdown_values[] 	= '';
 
 					if(in_array($attribute_value, $dropdown_values) === FALSE && !empty($attribute_value))
@@ -990,7 +997,7 @@ class Items extends Secure_Controller
 						return TRUE;
 					}
 				}
-				else if($definition_type == 'DECIMAL')
+				else if($definition_type === DECIMAL)
 				{
 					if(!is_numeric($attribute_value) && !empty($attribute_value))
 					{
@@ -998,7 +1005,7 @@ class Items extends Secure_Controller
 						return TRUE;
 					}
 				}
-				else if($definition_type == 'DATE')
+				else if($definition_type === DATE)
 				{
 					if(strtotime($attribute_value) === FALSE && !empty($attribute_value))
 					{
@@ -1019,11 +1026,8 @@ class Items extends Secure_Controller
 	 * @param failCodes
 	 * @param attribute_data
 	 */
-	private function save_attribute_data($line, $item_data)
+	private function save_attribute_data($line, $item_data, $definition_names)
 	{
-		$definition_names = $this->Attribute->get_definition_names();
-		unset($definition_names[-1]);
-
 		foreach($definition_names as $definition_name)
 		{
 		//Create attribute value
@@ -1076,13 +1080,10 @@ class Items extends Secure_Controller
 	 * @param	array	line
 	 * @param			item_data
 	 */
-	private function save_inventory_quantities($line, $item_data)
+	private function save_inventory_quantities($line, $item_data, $allowed_locations, $employee_id)
 	{
 	//Quantities & Inventory Section
-		$employee_id		= $this->Employee->get_logged_in_employee_info()->person_id;
-		$emp_info			= $this->Employee->get_info($employee_id);
 		$comment			= $this->lang->line('items_inventory_CSV_import_quantity');
-		$allowed_locations	= $this->Stock_location->get_allowed_locations();
 		$is_update			= !empty($line['item_id']);
 
 		foreach($allowed_locations as $location_id => $location_name)
