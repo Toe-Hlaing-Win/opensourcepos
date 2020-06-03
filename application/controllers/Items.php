@@ -227,6 +227,17 @@ class Items extends Secure_Controller
 
 		$use_destination_based_tax = (boolean)$this->config->item('use_destination_based_tax');
 		$data['include_hsn'] = $this->config->item('include_hsn') == '1';
+		$data['category_dropdown'] = $this->config->item('category_dropdown');
+
+		if($data['category_dropdown'] == 1)
+		{
+			$categories 		= array('' => $this->lang->line('items_none'));
+			$category_options 	= $this->Attribute->get_definition_values(-1);
+			$category_options	= array_combine($category_options,$category_options);	//Overwrite indexes with values for saving in items table instead of attributes
+			$data['categories'] = array_merge($categories,$category_options);
+
+			$data['selected_category'] = $item_info->category;
+		}
 
 		if($item_id == -1)
 		{
@@ -669,12 +680,10 @@ class Items extends Secure_Controller
 	{
 	//Load upload library
 		$config = array('upload_path' => './uploads/item_pics/',
-			'allowed_types' => 'gif|jpg|png',
-			'max_size' => '100',
-			'max_width' => '640',
-			'max_height' => '480'
-		);
-
+			'allowed_types' => $this->config->item('image_allowed_types'),
+			'max_size' => $this->config->item('image_max_size'),
+			'max_width' => $this->config->item('image_max_width'),
+			'max_height' => $this->config->item('image_max_height'));
 		$this->load->library('upload', $config);
 		$this->upload->do_upload('item_image');
 
@@ -845,6 +854,7 @@ class Items extends Secure_Controller
 					$invalidated	= FALSE;
 
 					$line = array_combine($keys,$this->xss_clean($line_array[$i]));	//Build a XSS-cleaned associative array with the row to use to assign values
+
 
 					$item_id	= $line['item_id'];
 					$item_data	= array(

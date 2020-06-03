@@ -6,6 +6,9 @@ define('DECIMAL', 'DECIMAL');
 define('DATE', 'DATE');
 define('TEXT', 'TEXT');
 define('CHECKBOX', 'CHECKBOX');
+define(NO_DEFINITION_ID, 0);
+define(CATEGORY_DEFINITION_ID, -1);
+
 
 const DEFINITION_TYPES = [GROUP, DROPDOWN, DECIMAL, TEXT, DATE, CHECKBOX];
 
@@ -93,10 +96,10 @@ class Attribute extends CI_Model
 		}
 		else
 		{
-		//Get empty base parent object, as $item_id is NOT an item
+			//Get empty base parent object, as $item_id is NOT an item
 			$item_obj = new stdClass();
 
-		//Get all the fields from items table
+			//Get all the fields from items table
 			foreach($this->db->list_fields('attribute_definitions') as $field)
 			{
 				$item_obj->$field = '';
@@ -167,13 +170,13 @@ class Attribute extends CI_Model
 		return array();
 	}
 
-	public function get_definitions_by_type($attribute_type, $definition_id = -1)
+	public function get_definitions_by_type($attribute_type, $definition_id = NO_DEFINITION_ID)
 	{
 		$this->db->from('attribute_definitions');
 		$this->db->where('definition_type', $attribute_type);
 		$this->db->where('deleted', 0);
 
-		if($definition_id != -1)
+		if($definition_id != CATEGORY_DEFINITION_ID)
 		{
 			$this->db->where('definition_id != ', $definition_id);
 		}
@@ -224,7 +227,7 @@ class Attribute extends CI_Model
 	{
 		$attribute_values = [];
 
-		if($definition_id > -1)
+		if($definition_id > 0 || $definition_id == CATEGORY_DEFINITION_ID)
 		{
 			$this->db->from('attribute_links');
 			$this->db->join('attribute_values', 'attribute_values.attribute_id = attribute_links.attribute_id');
@@ -357,7 +360,7 @@ class Attribute extends CI_Model
 	//From DROPDOWN
 		else if($from_type === DROPDOWN)
 		{
-		//To TEXT
+			//To TEXT
 			if(in_array($to_type, [TEXT, CHECKBOX], TRUE))
 			{
 				$this->db->trans_start();
@@ -369,7 +372,7 @@ class Attribute extends CI_Model
 
 				$this->db->trans_complete();
 
-			//To CHECKBOX
+				//To CHECKBOX
 				if($to_type === CHECKBOX)
 				{
 					$checkbox_attribute_values = $this->checkbox_attribute_values($definition_id);
@@ -388,7 +391,7 @@ class Attribute extends CI_Model
 			}
 		}
 
-	//From any other type
+		//From any other type
 		else
 		{
 			$success = TRUE;
@@ -418,19 +421,26 @@ class Attribute extends CI_Model
 	/*
 	 Inserts or updates a definition
 	 */
-	public function save_definition(&$definition_data, $definition_id = -1)
+	public function save_definition(&$definition_data, $definition_id = NO_DEFINITION_ID)
 	{
-	//Run these queries as a transaction, we want to make sure we do all or nothing
+		//Run these queries as a transaction, we want to make sure we do all or nothing
 		$this->db->trans_start();
 
-	//Definition doesn't exist
-		if($definition_id === -1 || !$this->exists($definition_id))
+		//Definition doesn't exist
+		if($definition_id === NO_DEFINITION_ID || !$this->exists($definition_id))
 		{
-			$success = $this->db->insert('attribute_definitions', $definition_data);
-			$definition_data['definition_id'] = $this->db->insert_id();
+			if($this->exists($definition_id,TRUE))
+			{
+				$success = $this->undelete($definition_id);
+			}
+			else
+			{
+				$success = $this->db->insert('attribute_definitions', $definition_data);
+				$definition_data['definition_id'] = $this->db->insert_id();
+			}
 		}
 
-	//Definition already exists
+		//Definition already exists
 		else
 		{
 			$this->db->select('definition_type, definition_name');
@@ -589,7 +599,7 @@ class Attribute extends CI_Model
 	{
 		$this->db->trans_start();
 
-	//New Attribute
+		//New Attribute
 		if(empty($attribute_id) || empty($item_id))
 		{
 		//Update attribute_value
@@ -620,7 +630,7 @@ class Attribute extends CI_Model
 				'definition_id' => $definition_id));
 		}
 
-	//Existing Attribute
+		//Existing Attribute
 		else
 		{
 		//Update attribute_value
@@ -669,5 +679,15 @@ class Attribute extends CI_Model
 		$this->db->where_in('definition_id', $definition_ids);
 
 		return $this->db->update('attribute_definitions', array('deleted' => 1));
+	}
+
+	/*
+	Undeletes one attribute definition
+	*/
+	public function undelete($definition_id)
+	{
+		$this->db->where('definition_id', $definition_id);
+
+		return $this->db->update('attribute_definitions', array('deleted'=>0));
 	}
 }
